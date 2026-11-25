@@ -1,3 +1,9 @@
+use tracing::info;
+use tracing_subscriber;
+
 fn main() {
-    println!("mgds-role-chooser");
+    // initial global logger.
+    tracing_subscriber::fmt::init();
+
+    info!("mgds role chooser");
 }
