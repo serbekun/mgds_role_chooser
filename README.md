@@ -45,7 +45,7 @@ If `ROLE_PANEL_CHANNEL_ID` is not set, the bot simply starts and waits for click
 ## Running
 
 ```bash
-export MGDS_ROLE_CHOOSIER_TOKEN="your_token"
+export MGDS_ROLE_CHOOSER_TOKEN="your_token"
 export ROLE_PANEL_CHANNEL_ID="123456789012345678"
 
 cargo run --release

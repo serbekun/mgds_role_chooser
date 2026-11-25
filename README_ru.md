@@ -45,7 +45,7 @@ Discord-бот на Rust, который публикует в канале па
 ## Запуск
 
 ```bash
-export MGDS_ROLE_CHOOSIER_TOKEN="ваш_токен"
+export MGDS_ROLE_CHOOSER_TOKEN="ваш_токен"
 export ROLE_PANEL_CHANNEL_ID="123456789012345678"
 
 cargo run --release
