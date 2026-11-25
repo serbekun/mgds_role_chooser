@@ -80,12 +80,15 @@ pub fn get_role_components() -> Vec<CreateActionRow> {
 pub async fn send_role_panel(
     http: &serenity::http::Http,
     channel_id: ChannelId,
-) -> serenity::Result<()> {
+) -> Result<(), Box<serenity::Error>> {
     let message = CreateMessage::new()
         .content("**Выберите себе роль:**")
         .components(get_role_components());
 
-    channel_id.send_message(http, message).await?;
+    channel_id
+        .send_message(http, message)
+        .await
+        .map_err(Box::new)?;
 
     Ok(())
 }
