@@ -9,7 +9,7 @@ use crate::roles::send_role_panel;
 const TOKEN_ENV: &str = "MGDS_ROLE_CHOOSER_TOKEN";
 
 #[tokio::main]
-async fn main() -> serenity::Result<()> {
+async fn main() -> Result<(), Box<serenity::Error>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
@@ -34,7 +34,7 @@ async fn main() -> serenity::Result<()> {
             .unwrap_or_else(|error| tracing::error!("Failed to send role panel: {error}"));
     }
 
-    client.start().await
+    client.start().await.map_err(Box::new)
 }
 
 fn get_token() -> String {
