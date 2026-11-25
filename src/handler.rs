@@ -17,17 +17,37 @@ pub struct Handler;
 impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         let Interaction::Component(component) = interaction else {
+            tracing::trace!("Ignoring non-component interaction");
             return;
         };
+
+        tracing::info!(
+            custom_id = component.data.custom_id,
+            user = %component.user.name,
+            user_id = %component.user.id,
+            "User requested a role change"
+        );
 
         let Some(role) = ROLES
             .iter()
             .find(|role| role.custom_id == component.data.custom_id)
         else {
+            tracing::warn!(
+                custom_id = component.data.custom_id,
+                user = %component.user.name,
+                user_id = %component.user.id,
+                "Received interaction for unknown role button"
+            );
             return;
         };
 
         let Some(guild_id) = component.guild_id else {
+            tracing::warn!(
+                custom_id = component.data.custom_id,
+                user = %component.user.name,
+                user_id = %component.user.id,
+                "Received role interaction outside of a guild"
+            );
             return;
         };
 
@@ -82,8 +102,32 @@ impl EventHandler for Handler {
         };
 
         let response = match result {
-            Ok(()) if has_role => format!("Роль **{}** снята!", role.label),
-            Ok(()) => format!("Роль **{}** успешно выдана!", role.label),
+            Ok(()) if has_role => {
+                tracing::info!(
+                    user = %component.user.name,
+                    user_id = %component.user.id,
+                    guild_id = %guild_id,
+                    role = role.label,
+                    role_id = %role.role_id,
+                    action = "removed",
+                    "Role changed successfully"
+                );
+
+                format!("Роль **{}** снята!", role.label)
+            }
+            Ok(()) => {
+                tracing::info!(
+                    user = %component.user.name,
+                    user_id = %component.user.id,
+                    guild_id = %guild_id,
+                    role = role.label,
+                    role_id = %role.role_id,
+                    action = "added",
+                    "Role changed successfully"
+                );
+
+                format!("Роль **{}** успешно выдана!", role.label)
+            }
             Err(error) => {
                 tracing::error!("Failed to toggle role: {error}");
 
