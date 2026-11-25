@@ -1,5 +1,5 @@
 [package]
-name = "mgds_role_choosier"
+name = "mgds_role_chooser"
 version = "0.1.0"
 edition = "2024"
 

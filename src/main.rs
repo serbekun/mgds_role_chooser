@@ -14,7 +14,7 @@ async fn main() -> serenity::Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    tracing::info!("mgds role choosier");
+    tracing::info!("mgds role chooser");
 
     let token = get_token();
 
