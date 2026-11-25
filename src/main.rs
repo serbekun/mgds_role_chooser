@@ -1,10 +1,14 @@
 use std::vec;
+use std::env;
 
 use serenity::all::CreateButton;
+use tracing::error;
 use tracing::info;
 use tracing_subscriber;
 
 use crate::Roles::Minecraft;
+
+const MGDS_ROLE_CHOOSER_TOKEN_ENV: &str = "MGDS_ROLE_CHOOSER_TOKEN";
 
 enum Roles {
     Minecraft,
@@ -38,11 +42,24 @@ impl Roles {
 }
 
 #[tokio::main]
-async fn main() {
-    // initial global logger.
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-
     info!("mgds role chooser");
+
+    let token = match env::var(MGDS_ROLE_CHOOSER_TOKEN_ENV) {
+        Ok(token) => token,
+        Err(e) => {
+            error!("failed to read {MGDS_ROLE_CHOOSER_TOKEN_ENV}: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    {
+        let first_five: String = token.chars().take(5).collect();
+        info!("token: {}...", first_five);
+    }
+
+    Ok(())
 }
 
 fn get_all_roles_buttons() -> Vec<CreateButton> {
