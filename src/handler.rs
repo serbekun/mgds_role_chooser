@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serenity::{
     all::{
         ComponentInteraction, CreateInteractionResponse, CreateInteractionResponseMessage,
@@ -9,9 +11,17 @@ use serenity::{
     prelude::Context,
 };
 
-use crate::roles::ROLES;
+use crate::roles::Roles;
 
-pub struct Handler;
+pub struct Handler {
+    roles: Arc<Roles>,
+}
+
+impl Handler {
+    pub fn new(roles: Arc<Roles>) -> Self {
+        Self { roles }
+    }
+}
 
 #[async_trait]
 impl EventHandler for Handler {
@@ -28,10 +38,7 @@ impl EventHandler for Handler {
             "User requested a role change"
         );
 
-        let Some(role) = ROLES
-            .iter()
-            .find(|role| role.custom_id == component.data.custom_id)
-        else {
+        let Some(role) = self.roles.find(&component.data.custom_id) else {
             tracing::warn!(
                 custom_id = component.data.custom_id,
                 user = %component.user.name,
@@ -79,14 +86,15 @@ impl EventHandler for Handler {
             }
         };
 
-        let has_role = member.roles.contains(&role.role_id);
+        let role_id = role.role_id();
+        let has_role = member.roles.contains(&role_id);
 
         let result = if has_role {
             ctx.http
                 .remove_member_role(
                     guild_id,
                     component.user.id,
-                    role.role_id,
+                    role_id,
                     Some("Self-removed role"),
                 )
                 .await
@@ -95,7 +103,7 @@ impl EventHandler for Handler {
                 .add_member_role(
                     guild_id,
                     component.user.id,
-                    role.role_id,
+                    role_id,
                     Some("Self-assigned role"),
                 )
                 .await

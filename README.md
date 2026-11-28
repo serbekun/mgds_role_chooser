@@ -12,7 +12,7 @@ The panel is a message saying **"Choose your role:"** with buttons (5 per row). 
 - Toggle a role by clicking the same button again.
 - Ephemeral responses showing the result of the operation.
 - Logging via `tracing`.
-- The role list is defined in code and easy to extend.
+- Roles and panel channels are configured together in `config.yaml`, so they can be changed without rebuilding the bot.
 
 ## Requirements
 
@@ -35,18 +35,19 @@ The bot is configured through environment variables:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `MGDS_ROLE_CHOOSIER_TOKEN` | Yes | Discord bot token. Do not commit it to the repository. |
-| `ROLE_PANEL_CHANNEL_ID` | No | ID of the channel where the panel is posted on startup. |
+| `MGDS_ROLE_CHOOSER_TOKEN` | Yes | Discord bot token. Do not commit it to the repository. |
+| `MGDS_ROLE_CHOOSER_CONFIG_PATH` | No | Path to the YAML roles and channels configuration. Defaults to `config.yaml`. |
 
-If `ROLE_PANEL_CHANNEL_ID` is not set, the bot simply starts and waits for clicks on an existing panel.
+If `panel_channel_ids` is empty or omitted, the bot starts and waits for clicks on existing panels. If `MGDS_ROLE_CHOOSER_CONFIG_PATH` is not set, the bot reads `config.yaml` from the current working directory.
 
-> **Important:** the panel is posted on **every** startup when `ROLE_PANEL_CHANNEL_ID` is set. To avoid duplicate messages, post the panel once and then remove the variable or leave it unset on subsequent runs.
+> **Important:** panels are posted to every listed channel on **every** startup. To avoid duplicates, clear `panel_channel_ids` after posting. If a send fails, posting stops at that channel, but the bot still starts.
 
 ## Running
 
 ```bash
 export MGDS_ROLE_CHOOSER_TOKEN="your_token"
-export ROLE_PANEL_CHANNEL_ID="123456789012345678"
+# Optional; defaults to ./config.yaml
+export MGDS_ROLE_CHOOSER_CONFIG_PATH="config.yaml"
 
 cargo run --release
 ```
@@ -61,24 +62,34 @@ The resulting binary is placed at `target/release/mgds_role_choosier`.
 
 ## Adding and modifying roles
 
-Roles are defined in `src/roles.rs` in the `ROLES` array:
+Roles and panel channels are defined in `config.yaml`:
 
-```rust
-RoleOption {
-    label: "Minecraft",                              // button label
-    custom_id: "role_minecraft",                     // unique button ID
-    role_id: RoleId::new(1073194781984952431),       // role ID on the server
-},
+```yaml
+panel_channel_ids:
+  - 123456789012345678
+  - 234567890123456789
+
+roles:
+  - label: Minecraft                  # button label
+    custom_id: role_minecraft         # unique button ID
+    role_id: 1073194781984952431      # role ID on the server
 ```
 
 To add a role:
 
-1. Add a new entry to `ROLES` (for example, `RoleOption { label: "Factorio", custom_id: "role_factorio", role_id: RoleId::new(...) }`).
+1. Add a new entry to the `roles` list in `config.yaml` (for example, `label: Factorio`, `custom_id: role_factorio`, `role_id: <id>`).
 2. Make sure the `custom_id` is unique and not used anywhere else.
-3. Rebuild and restart the bot.
-4. Post a new panel (set `ROLE_PANEL_CHANNEL_ID` for one run) — the old message will not update automatically.
+3. Restart the bot — no rebuild is required.
+4. Add the channel IDs to `panel_channel_ids` and restart the bot to post new panels. Existing messages are not updated automatically.
 
-Note: if you remove a role from `ROLES`, the button with its `custom_id` in the old message will stop being handled. If you change a `custom_id`, the old buttons stop working, so it is best to keep `custom_id`s stable.
+The bot validates the configuration on startup and refuses to start if:
+
+- the role list is empty or contains more than 25 roles (Discord's limit for one message);
+- a `custom_id` is empty or duplicated;
+- a `label` is empty or longer than 80 characters;
+- a `role_id` is `0`.
+
+Note: if you remove a role from `config.yaml`, the button with its `custom_id` in an old message will stop being handled. If you change a `custom_id`, old buttons stop working, so it is best to keep `custom_id`s stable.
 
 ## Project structure
 
@@ -86,7 +97,8 @@ Note: if you remove a role from `ROLES`, the button with its `custom_id` in the 
 src/
 ├── main.rs      # startup, config parsing, posting the panel on start
 ├── handler.rs   # handling button clicks and toggling roles
-└── roles.rs     # role list and panel/button construction
+└── roles.rs     # loading/validating roles and panel/button construction
+config.yaml      # roles and panel channel configuration
 ```
 
 ## Logs

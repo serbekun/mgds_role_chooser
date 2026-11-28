@@ -1,0 +1,35 @@
+# Channel IDs where the role panel is posted on each startup.
+# Use an empty list to only handle buttons on existing panels.
+panel_channel_ids: []
+
+roles:
+  - label: Minecraft
+    custom_id: role_minecraft
+    role_id: 1073194781984952431
+  - label: Repo
+    custom_id: role_repo
+    role_id: 1394293055636373574
+  - label: CS2
+    custom_id: role_cs2
+    role_id: 1072840854806470727
+  - label: Roblox
+    custom_id: role_roblox
+    role_id: 1227606279959220314
+  - label: Lethal Company
+    custom_id: role_lethal_company
+    role_id: 1215252748984123442
+  - label: Among Us
+    custom_id: role_among_us
+    role_id: 1227907907996221515
+  - label: BackShot
+    custom_id: role_back_shot
+    role_id: 1404722267585380362
+  - label: OpenTTD
+    custom_id: role_open_ttd
+    role_id: 1328704474067239002
+  - label: Terraria
+    custom_id: role_terraria
+    role_id: 1335572344642736162
+  - label: World of Tanks
+    custom_id: role_world_of_tanks
+    role_id: 1407717531598454875
