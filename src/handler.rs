@@ -11,15 +11,15 @@ use serenity::{
     prelude::Context,
 };
 
-use crate::roles::Roles;
+use crate::roles::Config;
 
 pub struct Handler {
-    roles: Arc<Roles>,
+    config: Arc<Config>,
 }
 
 impl Handler {
-    pub fn new(roles: Arc<Roles>) -> Self {
-        Self { roles }
+    pub fn new(config: Arc<Config>) -> Self {
+        Self { config }
     }
 }
 
@@ -38,7 +38,7 @@ impl EventHandler for Handler {
             "User requested a role change"
         );
 
-        let Some(role) = self.roles.find(&component.data.custom_id) else {
+        let Some(role) = self.config.find_button_role(&component.data.custom_id) else {
             tracing::warn!(
                 custom_id = component.data.custom_id,
                 user = %component.user.name,

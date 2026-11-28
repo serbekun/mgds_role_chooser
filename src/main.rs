@@ -27,15 +27,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let intents = GatewayIntents::GUILDS;
 
     let mut client = serenity::Client::builder(token, intents)
-        .event_handler(Handler::new(Arc::new(config.roles.clone())))
+        .event_handler(Handler::new(Arc::new(config.clone())))
         .await?;
 
-    for channel_id in config.panel_channel_ids() {
-        if let Err(error) = send_role_panel(&client.http, *channel_id, &config.roles).await {
-            tracing::error!(channel_id = %channel_id, "Failed to send role panel: {error}");
-            break;
+    'panels: for panel in config.panels() {
+        for channel_id in panel.channel_ids() {
+            if let Err(error) = send_role_panel(&client.http, *channel_id, panel).await {
+                tracing::error!(
+                    panel_id = panel.id,
+                    channel_id = %channel_id,
+                    "Failed to send role panel: {error}"
+                );
+                break 'panels;
+            }
+            tracing::info!(panel_id = panel.id, channel_id = %channel_id, "Role panel sent");
         }
-        tracing::info!(channel_id = %channel_id, "Role panel sent");
     }
 
     client.start().await?;
@@ -64,14 +70,13 @@ fn load_config() -> Config {
         Ok(config) => {
             tracing::info!(
                 path = path,
-                roles = config.roles.len(),
-                panel_channels = config.panel_channel_ids().len(),
+                panels = config.panels().len(),
                 "Loaded bot configuration"
             );
             config
         }
         Err(error) => {
-            tracing::error!("Failed to load roles: {error}");
+            tracing::error!("Failed to load configuration: {error}");
             std::process::exit(1);
         }
     }

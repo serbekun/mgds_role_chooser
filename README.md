@@ -2,9 +2,9 @@
 
 English | [Русский](README_ru.md)
 
-A Discord bot written in Rust that publishes a button panel for self-assigning and removing game roles on the Maxim Games Discord Server.
+A Discord bot written in Rust that publishes button panels for self-assigning and removing roles on the Maxim Games Discord Server.
 
-The panel is a message saying **"Choose your role:"** with buttons (5 per row). Clicking a button grants the role; clicking it again removes it. The response is ephemeral (visible only to the user who clicked), and roles survive bot restarts: the buttons rely on static `custom_id`s rather than in-memory message state.
+Each panel is a message saying **"Choose your role:"** with buttons (5 per row). Panels can have different roles, and one panel can be posted to several channels. Clicking a button grants its role; clicking it again removes it. The response is visible only to the user who clicked.
 
 ## Features
 
@@ -38,9 +38,9 @@ The bot is configured through environment variables:
 | `MGDS_ROLE_CHOOSER_TOKEN` | Yes | Discord bot token. Do not commit it to the repository. |
 | `MGDS_ROLE_CHOOSER_CONFIG_PATH` | No | Path to the YAML roles and channels configuration. Defaults to `config.yaml`. |
 
-If `panel_channel_ids` is empty or omitted, the bot starts and waits for clicks on existing panels. If `MGDS_ROLE_CHOOSER_CONFIG_PATH` is not set, the bot reads `config.yaml` from the current working directory.
+If a panel's `channel_ids` is empty, it is not posted. If `MGDS_ROLE_CHOOSER_CONFIG_PATH` is not set, the bot reads `config.yaml` from the current working directory.
 
-> **Important:** panels are posted to every listed channel on **every** startup. To avoid duplicates, clear `panel_channel_ids` after posting. If a send fails, posting stops at that channel, but the bot still starts.
+> **Important:** panels are posted to every listed channel on **every** startup. To avoid duplicates, remove the channel IDs after posting. If a send fails, posting stops and the bot continues starting. After switching to this format, delete old messages and post the panels again.
 
 ## Running
 
@@ -62,34 +62,44 @@ The resulting binary is placed at `target/release/mgds_role_choosier`.
 
 ## Adding and modifying roles
 
-Roles and panel channels are defined in `config.yaml`:
+Panels, channels, and roles are defined in `config.yaml`:
 
 ```yaml
-panel_channel_ids:
-  - 123456789012345678
-  - 234567890123456789
-
-roles:
-  - label: Minecraft                  # button label
-    custom_id: role_minecraft         # unique button ID
-    role_id: 1073194781984952431      # role ID on the server
+panels:
+  - id: games                         # stable, unique panel ID
+    channel_ids:                      # this panel is posted to each channel
+      - 123456789012345678
+      - 234567890123456789
+    roles:
+      - label: Minecraft
+        custom_id: role_minecraft     # unique within this panel
+        role_id: 1073194781984952431
+  - id: interests
+    channel_ids: []
+    roles:
+      - label: Gaming
+        custom_id: role_minecraft     # duplicates across panels are allowed
+        role_id: 1072840854806470727
 ```
 
 To add a role:
 
-1. Add a new entry to the `roles` list in `config.yaml` (for example, `label: Factorio`, `custom_id: role_factorio`, `role_id: <id>`).
-2. Make sure the `custom_id` is unique and not used anywhere else.
-3. Restart the bot — no rebuild is required.
-4. Add the channel IDs to `panel_channel_ids` and restart the bot to post new panels. Existing messages are not updated automatically.
+1. Add a panel to `panels` with a stable unique `id`, its own `channel_ids`, and `roles`.
+2. Add the IDs of the channels where that panel should be posted. A panel can target multiple channels.
+3. Role `custom_id`s must be unique within their panel; duplicates across panels are allowed.
+4. Restart the bot — no rebuild is required. Existing messages are not updated automatically.
 
 The bot validates the configuration on startup and refuses to start if:
 
-- the role list is empty or contains more than 25 roles (Discord's limit for one message);
-- a `custom_id` is empty or duplicated;
+- the panel list is empty, a panel ID is duplicated, or a panel ID contains invalid characters;
+- a panel has no roles or more than 25 roles (Discord's limit for one message);
+- a `custom_id` is empty or duplicated within its panel;
+- a generated button ID is longer than 100 characters;
+- a channel ID is `0` or duplicated within one panel;
 - a `label` is empty or longer than 80 characters;
 - a `role_id` is `0`.
 
-Note: if you remove a role from `config.yaml`, the button with its `custom_id` in an old message will stop being handled. If you change a `custom_id`, old buttons stop working, so it is best to keep `custom_id`s stable.
+Keep each panel's `id` unchanged so its buttons continue working after restarts. If you remove a panel or change its `id` or a role `custom_id`, its old buttons stop working; post the panel again.
 
 ## Project structure
 

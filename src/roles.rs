@@ -6,14 +6,13 @@ use std::path::Path;
 use serde::Deserialize;
 use serenity::all::{ButtonStyle, ChannelId, CreateActionRow, CreateButton, CreateMessage, RoleId};
 
-/// Maximum number of buttons Discord allows in a single message
-/// (5 buttons per action row, 5 action rows).
+/// Discord allows at most five rows with five buttons each in one message.
 const MAX_ROLES: usize = 25;
 const BUTTONS_PER_ROW: usize = 5;
 const MAX_CUSTOM_ID_LEN: usize = 100;
 const MAX_LABEL_LEN: usize = 80;
+const BUTTON_ID_PREFIX: &str = "panel:";
 
-/// A role entry as it is written in the YAML configuration file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RoleOption {
     pub label: String,
@@ -29,16 +28,57 @@ impl RoleOption {
 
 #[derive(Debug, Deserialize)]
 struct ConfigFile {
+    panels: Vec<PanelFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PanelFile {
+    id: String,
     #[serde(default)]
-    panel_channel_ids: Vec<u64>,
+    channel_ids: Vec<u64>,
     roles: Vec<RoleOption>,
 }
 
-/// Complete bot configuration loaded from a YAML file.
+#[derive(Debug, Clone)]
+pub struct Panel {
+    pub id: String,
+    channel_ids: Vec<ChannelId>,
+    roles: Roles,
+}
+
+impl Panel {
+    pub fn roles_len(&self) -> usize {
+        self.roles.len()
+    }
+
+    pub fn channel_ids(&self) -> &[ChannelId] {
+        &self.channel_ids
+    }
+
+    pub fn components(&self) -> Vec<CreateActionRow> {
+        self.roles
+            .roles
+            .chunks(BUTTONS_PER_ROW)
+            .map(|roles| {
+                CreateActionRow::Buttons(
+                    roles
+                        .iter()
+                        .map(|role| {
+                            CreateButton::new(button_custom_id(&self.id, &role.custom_id))
+                                .label(role.label.as_str())
+                                .style(ButtonStyle::Secondary)
+                        })
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+}
+
+/// Complete bot configuration loaded from YAML.
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub roles: Roles,
-    panel_channel_ids: Vec<ChannelId>,
+    panels: Vec<Panel>,
 }
 
 impl Config {
@@ -52,28 +92,86 @@ impl Config {
 
     pub fn from_yaml(yaml: &str) -> Result<Self, Box<dyn Error>> {
         let file: ConfigFile = serde_yaml::from_str(yaml)?;
-        let roles = Roles::new(file.roles).map_err(|error| -> Box<dyn Error> { error.into() })?;
-        if file.panel_channel_ids.contains(&0) {
-            return Err("panel_channel_ids must not contain 0".into());
+        if file.panels.is_empty() {
+            return Err("at least one panel must be configured".into());
         }
-        Ok(Self {
-            roles,
-            panel_channel_ids: file
-                .panel_channel_ids
-                .into_iter()
-                .map(ChannelId::new)
-                .collect(),
-        })
+
+        let mut panel_ids = HashSet::<String>::with_capacity(file.panels.len());
+        let mut panels = Vec::with_capacity(file.panels.len());
+        for panel in file.panels {
+            if panel.id.is_empty()
+                || !panel
+                    .id
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            {
+                return Err(format!(
+                    "panel id `{}` must contain only ASCII letters, digits, `_` or `-`",
+                    panel.id
+                )
+                .into());
+            }
+            if !panel_ids.insert(panel.id.clone()) {
+                return Err(format!("duplicate panel id `{}`", panel.id).into());
+            }
+
+            if panel.channel_ids.contains(&0) {
+                return Err(format!("panel `{}` has a channel ID of 0", panel.id).into());
+            }
+            let mut channel_ids = HashSet::with_capacity(panel.channel_ids.len());
+            for channel_id in &panel.channel_ids {
+                if !channel_ids.insert(channel_id) {
+                    return Err(format!(
+                        "panel `{}` has duplicate channel ID `{channel_id}`",
+                        panel.id
+                    )
+                    .into());
+                }
+            }
+
+            let roles = Roles::new(panel.roles).map_err(|error| -> Box<dyn Error> {
+                format!("panel `{}`: {error}", panel.id).into()
+            })?;
+            for role in &roles.roles {
+                if button_custom_id(&panel.id, &role.custom_id).chars().count() > MAX_CUSTOM_ID_LEN
+                {
+                    return Err(format!(
+                        "button ID for panel `{}` and role `{}` exceeds {MAX_CUSTOM_ID_LEN} characters",
+                        panel.id, role.custom_id
+                    )
+                    .into());
+                }
+            }
+
+            panels.push(Panel {
+                id: panel.id,
+                channel_ids: panel.channel_ids.into_iter().map(ChannelId::new).collect(),
+                roles,
+            });
+        }
+
+        Ok(Self { panels })
     }
 
-    pub fn panel_channel_ids(&self) -> &[ChannelId] {
-        &self.panel_channel_ids
+    pub fn panels(&self) -> &[Panel] {
+        &self.panels
+    }
+
+    /// Resolves the namespaced button ID emitted by a configured panel.
+    pub fn find_button_role(&self, custom_id: &str) -> Option<&RoleOption> {
+        let namespaced_id = custom_id.strip_prefix(BUTTON_ID_PREFIX)?;
+        let (panel_id, role_custom_id) = namespaced_id.split_once(':')?;
+        let panel = self.panels.iter().find(|panel| panel.id == panel_id)?;
+        panel.roles.find(role_custom_id)
     }
 }
 
-/// The list of self-assignable roles, loaded from a YAML configuration file.
+fn button_custom_id(panel_id: &str, role_custom_id: &str) -> String {
+    format!("{BUTTON_ID_PREFIX}{panel_id}:{role_custom_id}")
+}
+
 #[derive(Debug, Clone)]
-pub struct Roles {
+struct Roles {
     roles: Vec<RoleOption>,
 }
 
@@ -82,7 +180,6 @@ impl Roles {
         if roles.is_empty() {
             return Err("at least one role must be configured".to_string());
         }
-
         if roles.len() > MAX_ROLES {
             return Err(format!(
                 "too many roles: {} configured, at most {MAX_ROLES} are supported",
@@ -93,37 +190,23 @@ impl Roles {
         let mut custom_ids = HashSet::with_capacity(roles.len());
         for role in &roles {
             if role.label.trim().is_empty() {
-                return Err(format!(
-                    "role with custom_id `{}` has an empty label",
-                    role.custom_id
-                ));
+                return Err(format!("role `{}` has an empty label", role.custom_id));
             }
-
             if role.label.chars().count() > MAX_LABEL_LEN {
                 return Err(format!(
                     "role `{}` has a label longer than {MAX_LABEL_LEN} characters",
                     role.custom_id
                 ));
             }
-
             if role.custom_id.trim().is_empty() {
                 return Err(format!("role `{}` has an empty custom_id", role.label));
             }
-
-            if role.custom_id.chars().count() > MAX_CUSTOM_ID_LEN {
-                return Err(format!(
-                    "role `{}` has a custom_id longer than {MAX_CUSTOM_ID_LEN} characters",
-                    role.label
-                ));
-            }
-
             if !custom_ids.insert(role.custom_id.as_str()) {
                 return Err(format!(
-                    "duplicate custom_id `{}` in roles config",
+                    "duplicate custom_id `{}` within panel",
                     role.custom_id
                 ));
             }
-
             if role.role_id == 0 {
                 return Err(format!(
                     "role `{}` has an invalid role_id (0)",
@@ -131,51 +214,30 @@ impl Roles {
                 ));
             }
         }
-
         Ok(Self { roles })
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.roles.len()
     }
 
-    pub fn find(&self, custom_id: &str) -> Option<&RoleOption> {
+    fn find(&self, custom_id: &str) -> Option<&RoleOption> {
         self.roles.iter().find(|role| role.custom_id == custom_id)
-    }
-
-    pub fn components(&self) -> Vec<CreateActionRow> {
-        self.roles
-            .chunks(BUTTONS_PER_ROW)
-            .map(|roles| {
-                CreateActionRow::Buttons(
-                    roles
-                        .iter()
-                        .map(|role| {
-                            CreateButton::new(role.custom_id.as_str())
-                                .label(role.label.as_str())
-                                .style(ButtonStyle::Secondary)
-                        })
-                        .collect(),
-                )
-            })
-            .collect()
     }
 }
 
 pub async fn send_role_panel(
     http: &serenity::http::Http,
     channel_id: ChannelId,
-    roles: &Roles,
+    panel: &Panel,
 ) -> Result<(), Box<serenity::Error>> {
     let message = CreateMessage::new()
         .content("**Выберите себе роль:**")
-        .components(roles.components());
-
+        .components(panel.components());
     channel_id
         .send_message(http, message)
         .await
         .map_err(Box::new)?;
-
     Ok(())
 }
 
@@ -184,56 +246,77 @@ mod tests {
     use super::*;
 
     const VALID: &str = r#"
-roles:
-  - label: Minecraft
-    custom_id: role_minecraft
-    role_id: 1073194781984952431
-  - label: CS2
-    custom_id: role_cs2
-    role_id: 1072840854806470727
+panels:
+  - id: games
+    channel_ids: [12, 34]
+    roles:
+      - label: Minecraft
+        custom_id: role_game
+        role_id: 123
+      - label: CS2
+        custom_id: role_cs2
+        role_id: 456
+  - id: interests
+    channel_ids: [56]
+    roles:
+      - label: Gaming
+        custom_id: role_game
+        role_id: 789
 "#;
 
     #[test]
-    fn parses_valid_config() {
-        let roles = Config::from_yaml(VALID)
-            .expect("config should be valid")
-            .roles;
-
-        assert_eq!(roles.len(), 2);
+    fn parses_panels_and_allows_duplicate_custom_ids_across_panels() {
+        let config = Config::from_yaml(VALID).expect("config should be valid");
+        assert_eq!(config.panels().len(), 2);
+        assert_eq!(config.panels()[0].channel_ids().len(), 2);
+        assert_eq!(config.panels()[0].roles_len(), 2);
         assert_eq!(
-            roles.find("role_cs2").map(|role| role.label.as_str()),
-            Some("CS2")
+            config
+                .find_button_role("panel:games:role_game")
+                .unwrap()
+                .role_id,
+            123
         );
-        assert!(roles.find("missing").is_none());
+        assert_eq!(
+            config
+                .find_button_role("panel:interests:role_game")
+                .unwrap()
+                .role_id,
+            789
+        );
     }
 
     #[test]
-    fn rejects_duplicate_custom_ids() {
-        let yaml = r#"
-roles:
-  - label: First
-    custom_id: same
-    role_id: 1
-  - label: Second
-    custom_id: same
-    role_id: 2
-"#;
-
-        assert!(Config::from_yaml(yaml).is_err());
+    fn rejects_duplicate_panel_ids() {
+        let yaml = VALID.replace("id: interests", "id: games");
+        assert!(Config::from_yaml(&yaml).is_err());
     }
 
     #[test]
-    fn rejects_empty_role_list() {
-        assert!(Config::from_yaml("roles: []").is_err());
+    fn rejects_empty_panels_and_invalid_role_lists() {
+        assert!(Config::from_yaml("panels: []").is_err());
+        assert!(Config::from_yaml("panels: [{ id: empty, roles: [] }]").is_err());
     }
 
     #[test]
-    fn parses_multiple_panel_channels_and_allows_none() {
-        let yaml = format!("panel_channel_ids: [12, 34]\n{VALID}");
-        let config = Config::from_yaml(&yaml).expect("config should be valid");
-        assert_eq!(config.panel_channel_ids().len(), 2);
+    fn rejects_duplicate_role_ids_within_panel_and_invalid_channels() {
+        let duplicate_roles = VALID.replace("custom_id: role_cs2", "custom_id: role_game");
+        assert!(Config::from_yaml(&duplicate_roles).is_err());
 
-        let config = Config::from_yaml(VALID).expect("channels default to empty");
-        assert!(config.panel_channel_ids().is_empty());
+        let duplicate_channels = VALID.replace("channel_ids: [12, 34]", "channel_ids: [12, 12]");
+        assert!(Config::from_yaml(&duplicate_channels).is_err());
+
+        let zero_channel = VALID.replace("channel_ids: [12, 34]", "channel_ids: [0]");
+        assert!(Config::from_yaml(&zero_channel).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_or_overlong_generated_button_ids() {
+        let invalid_id = VALID.replace("id: games", "id: bad:id");
+        assert!(Config::from_yaml(&invalid_id).is_err());
+
+        let long_custom_id = "x".repeat(95);
+        let yaml = VALID.replace("role_game", &long_custom_id);
+        assert!(Config::from_yaml(&yaml).is_err());
     }
 }
