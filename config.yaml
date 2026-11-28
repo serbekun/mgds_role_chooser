@@ -2,6 +2,7 @@
 # Panels are posted to every listed channel on each bot startup.
 panels:
   - id: games
+    label: "Выберите себе роль:"
     channel_ids: []
     roles:
       - label: Minecraft

@@ -4,7 +4,7 @@ English | [Русский](README_ru.md)
 
 A Discord bot written in Rust that publishes button panels for self-assigning and removing roles on the Maxim Games Discord Server.
 
-Each panel is a message saying **"Choose your role:"** with buttons (5 per row). Panels can have different roles, and one panel can be posted to several channels. Clicking a button grants its role; clicking it again removes it. The response is visible only to the user who clicked.
+Each panel has its own message heading and buttons (5 per row). Panels can have different roles, and one panel can be posted to several channels. Clicking a button grants its role; clicking it again removes it. The response is visible only to the user who clicked.
 
 ## Features
 
@@ -67,6 +67,7 @@ Panels, channels, and roles are defined in `config.yaml`:
 ```yaml
 panels:
   - id: games                         # stable, unique panel ID
+    label: "Choose game roles:"      # message heading
     channel_ids:                      # this panel is posted to each channel
       - 123456789012345678
       - 234567890123456789
@@ -75,6 +76,7 @@ panels:
         custom_id: role_minecraft     # unique within this panel
         role_id: 1073194781984952431
   - id: interests
+    label: "Choose your interests:"
     channel_ids: []
     roles:
       - label: Gaming
@@ -93,6 +95,7 @@ The bot validates the configuration on startup and refuses to start if:
 
 - the panel list is empty, a panel ID is duplicated, or a panel ID contains invalid characters;
 - a panel has no roles or more than 25 roles (Discord's limit for one message);
+- a panel `label` is empty or longer than 100 characters;
 - a `custom_id` is empty or duplicated within its panel;
 - a generated button ID is longer than 100 characters;
 - a channel ID is `0` or duplicated within one panel;

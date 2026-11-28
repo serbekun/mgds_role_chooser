@@ -11,6 +11,7 @@ const MAX_ROLES: usize = 25;
 const BUTTONS_PER_ROW: usize = 5;
 const MAX_CUSTOM_ID_LEN: usize = 100;
 const MAX_LABEL_LEN: usize = 80;
+const MAX_PANEL_LABEL_LEN: usize = 100;
 const BUTTON_ID_PREFIX: &str = "panel:";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -34,6 +35,7 @@ struct ConfigFile {
 #[derive(Debug, Deserialize)]
 struct PanelFile {
     id: String,
+    label: String,
     #[serde(default)]
     channel_ids: Vec<u64>,
     roles: Vec<RoleOption>,
@@ -42,6 +44,7 @@ struct PanelFile {
 #[derive(Debug, Clone)]
 pub struct Panel {
     pub id: String,
+    pub label: String,
     channel_ids: Vec<ChannelId>,
     roles: Roles,
 }
@@ -100,6 +103,16 @@ impl Config {
         let mut panel_ids = HashSet::<String>::with_capacity(file.panels.len());
         let mut panels = Vec::with_capacity(file.panels.len());
         for panel in file.panels {
+            if panel.label.trim().is_empty() {
+                return Err(format!("panel `{}` has an empty label", panel.id).into());
+            }
+            if panel.label.chars().count() > MAX_PANEL_LABEL_LEN {
+                return Err(format!(
+                    "panel `{}` has a label longer than {MAX_PANEL_LABEL_LEN} characters",
+                    panel.id
+                )
+                .into());
+            }
             if panel.id.is_empty()
                 || !panel
                     .id
@@ -146,6 +159,7 @@ impl Config {
 
             panels.push(Panel {
                 id: panel.id,
+                label: panel.label,
                 channel_ids: panel.channel_ids.into_iter().map(ChannelId::new).collect(),
                 roles,
             });
@@ -233,7 +247,7 @@ pub async fn send_role_panel(
     panel: &Panel,
 ) -> Result<(), Box<serenity::Error>> {
     let message = CreateMessage::new()
-        .content("**Выберите себе роль:**")
+        .content(format!("**{}**", panel.label))
         .components(panel.components());
     channel_id
         .send_message(http, message)
@@ -249,6 +263,7 @@ mod tests {
     const VALID: &str = r#"
 panels:
   - id: games
+    label: "Выберите игровые роли:"
     channel_ids: [12, 34]
     roles:
       - label: Minecraft
@@ -258,6 +273,7 @@ panels:
         custom_id: role_cs2
         role_id: 456
   - id: interests
+    label: "Выберите интересы:"
     channel_ids: [56]
     roles:
       - label: Gaming
@@ -269,6 +285,7 @@ panels:
     fn parses_panels_and_allows_duplicate_custom_ids_across_panels() {
         let config = Config::from_yaml(VALID).expect("config should be valid");
         assert_eq!(config.panels().len(), 2);
+        assert_eq!(config.panels()[0].label, "Выберите игровые роли:");
         assert_eq!(config.panels()[0].channel_ids().len(), 2);
         assert_eq!(config.panels()[0].roles_len(), 2);
         assert_eq!(
@@ -297,6 +314,16 @@ panels:
     fn rejects_empty_panels_and_invalid_role_lists() {
         assert!(Config::from_yaml("panels: []").is_err());
         assert!(Config::from_yaml("panels: [{ id: empty, roles: [] }]").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_or_overlong_panel_labels() {
+        let empty_label = VALID.replace("label: \"Выберите игровые роли:\"", "label: \"  \"");
+        assert!(Config::from_yaml(&empty_label).is_err());
+
+        let long_label = "x".repeat(MAX_PANEL_LABEL_LEN + 1);
+        let yaml = VALID.replace("Выберите игровые роли:", &long_label);
+        assert!(Config::from_yaml(&yaml).is_err());
     }
 
     #[test]
