@@ -47,6 +47,7 @@ pub struct Panel {
 }
 
 impl Panel {
+    #[allow(dead_code)]
     pub fn roles_len(&self) -> usize {
         self.roles.len()
     }
